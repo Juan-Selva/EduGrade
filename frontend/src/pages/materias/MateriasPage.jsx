@@ -1,0 +1,341 @@
+import { useState, useEffect } from 'react'
+import { Plus, Search, BookOpen, ChevronLeft, ChevronRight, Pencil, Trash2 } from 'lucide-react'
+import Button from '../../components/ui/Button'
+import Input from '../../components/ui/Input'
+import Card from '../../components/ui/Card'
+import { Table, TableHeader, TableBody, TableRow, TableHead, TableCell } from '../../components/ui/Table'
+import Modal from '../../components/ui/Modal'
+import Loading from '../../components/shared/Loading'
+import EmptyState from '../../components/shared/EmptyState'
+import ErrorMessage from '../../components/shared/ErrorMessage'
+import { useDebounce } from '../../hooks/useDebounce'
+import { useMaterias, useCreateMateria, useUpdateMateria, useDeleteMateria, useCreateMateriaReplicada } from '../../hooks/useMaterias'
+
+export default function MateriasPage() {
+  const [search, setSearch] = useState('')
+  const [page, setPage] = useState(1)
+  const debouncedSearch = useDebounce(search, 400)
+  const [formModalOpen, setFormModalOpen] = useState(false)
+  const [formData, setFormData] = useState({ nombre: '', area: '', codigo: '', creditos: '' })
+  const [formError, setFormError] = useState('')
+  const [editingId, setEditingId] = useState(null)
+  const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false)
+  const [materiaToDelete, setMateriaToDelete] = useState(null)
+  const limit = 20
+
+  useEffect(() => {
+    setPage(1)
+  }, [debouncedSearch])
+
+  const { data, isLoading, error } = useMaterias({ search: debouncedSearch, page, limit })
+  const createMutation = useCreateMateria()
+  const createReplicadaMutation = useCreateMateriaReplicada()
+  const updateMutation = useUpdateMateria()
+  const deleteMutation = useDeleteMateria()
+
+  const materias = data?.data || []
+  const pagination = data?.pagination || { total: 0, pages: 1 }
+
+  const AREAS = [
+    { value: 'matematicas', label: 'Matematicas' },
+    { value: 'ciencias', label: 'Ciencias' },
+    { value: 'lengua', label: 'Lengua' },
+    { value: 'idiomas', label: 'Idiomas' },
+    { value: 'historia', label: 'Historia' },
+    { value: 'geografia', label: 'Geografia' },
+    { value: 'arte', label: 'Arte' },
+    { value: 'musica', label: 'Musica' },
+    { value: 'educacion_fisica', label: 'Educacion Fisica' },
+    { value: 'tecnologia', label: 'Tecnologia' },
+    { value: 'otra', label: 'Otra' },
+  ]
+
+  const openCreateModal = () => {
+    setFormData({ nombre: '', area: '', codigo: '', creditos: '' })
+    setFormError('')
+    setEditingId(null)
+    setFormModalOpen(true)
+  }
+
+  const openEditModal = (materia) => {
+    setFormData({
+      nombre: materia.nombre || '',
+      codigo: materia.codigo || '',
+      creditos: materia.creditos?.toString() || ''
+    })
+    setFormError('')
+    setEditingId(materia._id)
+    setFormModalOpen(true)
+  }
+
+  const openDeleteConfirm = (materia) => {
+    setMateriaToDelete(materia)
+    setDeleteConfirmOpen(true)
+  }
+
+  const handleDelete = async () => {
+    try {
+      await deleteMutation.mutateAsync(materiaToDelete._id)
+      setDeleteConfirmOpen(false)
+      setMateriaToDelete(null)
+    } catch (err) {
+      setFormError(err.response?.data?.mensaje || 'Error al eliminar')
+    }
+  }
+
+  const handleFormChange = (e) => {
+    setFormData((prev) => ({
+      ...prev,
+      [e.target.name]: e.target.value,
+    }))
+  }
+
+  const handleSubmit = async (e) => {
+    e.preventDefault()
+    setFormError('')
+
+    try {
+      if (editingId) {
+        const dataToSend = {
+          ...formData,
+          creditos: formData.creditos ? parseInt(formData.creditos) : undefined,
+        }
+        await updateMutation.mutateAsync({ id: editingId, ...dataToSend })
+      } else {
+        await createReplicadaMutation.mutateAsync({ nombre: formData.nombre, area: formData.area })
+      }
+      setFormModalOpen(false)
+      setEditingId(null)
+    } catch (err) {
+      setFormError(err.response?.data?.mensaje || 'Error al guardar')
+    }
+  }
+
+  const handleSearchChange = (e) => {
+    setSearch(e.target.value)
+  }
+
+  if (isLoading) return <Loading />
+  if (error) return <ErrorMessage message="Error al cargar las materias" />
+
+  return (
+    <div className="space-y-6">
+      <div className="flex items-center justify-between">
+        <div>
+          <h1 className="text-2xl font-bold text-gray-900">Materias</h1>
+          <p className="text-gray-500">
+            {pagination.total.toLocaleString()} materias en total
+          </p>
+        </div>
+        <Button icon={Plus} onClick={openCreateModal}>
+          Nueva Materia
+        </Button>
+      </div>
+
+      <Card>
+        <div className="p-4 border-b border-gray-200">
+          <div className="relative max-w-sm">
+            <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-400" />
+            <input
+              type="text"
+              placeholder="Buscar materias..."
+              value={search}
+              onChange={handleSearchChange}
+              className="w-full pl-10 pr-4 py-2 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-gray-900"
+            />
+          </div>
+        </div>
+
+        {materias.length === 0 ? (
+          <EmptyState
+            icon={BookOpen}
+            title="No hay materias"
+            description="Comienza agregando una nueva materia"
+            action={
+              <Button icon={Plus} onClick={openCreateModal}>
+                Nueva Materia
+              </Button>
+            }
+          />
+        ) : (
+          <>
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>Nombre</TableHead>
+                  <TableHead>Codigo</TableHead>
+                  <TableHead>Sistema</TableHead>
+                  <TableHead>Area</TableHead>
+                  <TableHead>Creditos</TableHead>
+                  <TableHead className="w-24">Acciones</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {materias.map((materia) => (
+                  <TableRow key={materia._id}>
+                    <TableCell className="font-medium">{materia.nombre}</TableCell>
+                    <TableCell>{materia.codigo || '-'}</TableCell>
+                    <TableCell>{materia.sistemaEducativo || '-'}</TableCell>
+                    <TableCell>{materia.area || '-'}</TableCell>
+                    <TableCell>{materia.creditos || '-'}</TableCell>
+                    <TableCell>
+                      <div className="flex items-center gap-2">
+                        <button
+                          onClick={() => openEditModal(materia)}
+                          className="p-1.5 rounded-lg hover:bg-gray-100 text-gray-500 hover:text-gray-700"
+                          title="Editar"
+                        >
+                          <Pencil className="h-4 w-4" />
+                        </button>
+                        <button
+                          onClick={() => openDeleteConfirm(materia)}
+                          className="p-1.5 rounded-lg hover:bg-red-50 text-gray-500 hover:text-red-600"
+                          title="Eliminar"
+                        >
+                          <Trash2 className="h-4 w-4" />
+                        </button>
+                      </div>
+                    </TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+
+            {/* Paginacion */}
+            {pagination.pages > 1 && (
+              <div className="flex items-center justify-between px-4 py-3 border-t border-gray-200">
+                <div className="text-sm text-gray-500">
+                  Mostrando {((page - 1) * limit) + 1} - {Math.min(page * limit, pagination.total)} de {pagination.total.toLocaleString()}
+                </div>
+                <div className="flex items-center gap-2">
+                  <button
+                    onClick={() => setPage(p => Math.max(1, p - 1))}
+                    disabled={page === 1}
+                    className="p-2 rounded-lg border border-gray-200 disabled:opacity-50 disabled:cursor-not-allowed hover:bg-gray-50"
+                  >
+                    <ChevronLeft className="h-4 w-4" />
+                  </button>
+                  <span className="px-3 py-1 text-sm">
+                    Pagina {page} de {pagination.pages.toLocaleString()}
+                  </span>
+                  <button
+                    onClick={() => setPage(p => Math.min(pagination.pages, p + 1))}
+                    disabled={page >= pagination.pages}
+                    className="p-2 rounded-lg border border-gray-200 disabled:opacity-50 disabled:cursor-not-allowed hover:bg-gray-50"
+                  >
+                    <ChevronRight className="h-4 w-4" />
+                  </button>
+                </div>
+              </div>
+            )}
+          </>
+        )}
+      </Card>
+
+      <Modal
+        isOpen={formModalOpen}
+        onClose={() => { setFormModalOpen(false); setEditingId(null); }}
+        title={editingId ? 'Editar Materia' : 'Nueva Materia'}
+      >
+        <form onSubmit={handleSubmit} className="space-y-4">
+          <Input
+            label="Nombre"
+            name="nombre"
+            value={formData.nombre}
+            onChange={handleFormChange}
+            required
+          />
+          {editingId ? (
+            <>
+              <Input
+                label="Codigo"
+                name="codigo"
+                value={formData.codigo}
+                onChange={handleFormChange}
+              />
+              <Input
+                label="Creditos"
+                type="number"
+                name="creditos"
+                value={formData.creditos}
+                onChange={handleFormChange}
+                min="1"
+              />
+            </>
+          ) : (
+            <>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Area</label>
+                <select
+                  name="area"
+                  value={formData.area}
+                  onChange={handleFormChange}
+                  required
+                  className="w-full px-3 py-2 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-gray-900"
+                >
+                  <option value="">Seleccionar area...</option>
+                  {AREAS.map((a) => (
+                    <option key={a.value} value={a.value}>{a.label}</option>
+                  ))}
+                </select>
+              </div>
+              <p className="text-sm text-gray-500">
+                Se crearan 4 variantes automaticamente (UK, US, DE, AR) con valores por defecto segun cada sistema educativo.
+              </p>
+            </>
+          )}
+
+          {formError && <ErrorMessage message={formError} />}
+
+          <div className="flex justify-end gap-3 pt-2">
+            <Button
+              type="button"
+              variant="secondary"
+              onClick={() => { setFormModalOpen(false); setEditingId(null); }}
+            >
+              Cancelar
+            </Button>
+            <Button
+              type="submit"
+              loading={createReplicadaMutation.isPending || updateMutation.isPending}
+            >
+              {editingId ? 'Guardar' : 'Crear'}
+            </Button>
+          </div>
+        </form>
+      </Modal>
+
+      <Modal
+        isOpen={deleteConfirmOpen}
+        onClose={() => setDeleteConfirmOpen(false)}
+        title="Confirmar eliminacion"
+      >
+        <div className="space-y-4">
+          <p className="text-gray-600">
+            ¿Estas seguro de que deseas eliminar la materia <strong>{materiaToDelete?.nombre}</strong>?
+          </p>
+          <p className="text-sm text-gray-500">
+            Esta accion marcara la materia como inactiva.
+          </p>
+          <div className="flex justify-end gap-3 pt-2">
+            <Button
+              type="button"
+              variant="secondary"
+              onClick={() => setDeleteConfirmOpen(false)}
+            >
+              Cancelar
+            </Button>
+            <Button
+              type="button"
+              variant="danger"
+              loading={deleteMutation.isPending}
+              onClick={handleDelete}
+            >
+              Eliminar
+            </Button>
+          </div>
+        </div>
+      </Modal>
+    </div>
+  )
+}
